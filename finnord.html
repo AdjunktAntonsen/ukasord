@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Øveside for ukas ord og andre begreper</title>
+  <style>
+    :root {
+      --cell-size: 2.5em;
+      --cell-border: 1px solid #ccc;
+      --highlight-color: #ffeb3b;
+      --found-color: #8bc34a;
+    }
+    body { font-family: sans-serif; margin: 0; display: flex; flex-direction: column; min-height: 100vh; }
+    header { background: #2196f3; color: white; padding: 1em; text-align: center; }
+    .header__title { margin: 0; font-size: 1.5em; line-height: 1.2; }
+    .header__subtitle { margin: 0; font-size: 1em; opacity: 0.9; }
+    .controls { display: flex; flex-wrap: wrap; gap: 1em; padding: 1em; align-items: center; }
+    .controls textarea { flex: 1 1 100%; min-height: 3em; padding: 0.5em; border: 1px solid #ccc; border-radius: 4px; resize: vertical; font-size: 1em; }
+    .button { background: #fff; border: none; padding: 0.5em 1em; cursor: pointer; border-radius: 4px; font-size: 1em; }
+    main { flex: 1; display: flex; gap: 2em; padding: 1em; }
+    #puzzle { display: grid; grid-template-columns: repeat(10, var(--cell-size)); grid-template-rows: repeat(10, var(--cell-size)); user-select: none; }
+    .cell { width: var(--cell-size); height: var(--cell-size); display: flex; justify-content: center; align-items: center; border: var(--cell-border); font-weight: bold; cursor: pointer; }
+    .cell.highlight { background: var(--highlight-color); }
+    .cell.found { background: var(--found-color); cursor: default; }
+    aside { width: 12em; }
+    #wordList { list-style: none; padding: 0; margin: 0; }
+    #wordList li { padding: 0.2em 0; }
+    #wordList li.found { text-decoration: line-through; color: #666; }
+    #timeUsed { margin-top: 1em; font-size: 0.9em; }
+    @media (max-width: 500px) { main { flex-direction: column; align-items: center; } aside { width: auto; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 class="header__title">Øveside for ukas ord og andre begreper</h1>
+    <p class="header__subtitle">Solheim skole, Lørenskog kommune</p>
+  </header>
+  <div class="controls">
+    <textarea id="wordInput" placeholder="Skriv inn ord, separert med komma eller linjeskift"></textarea>
+    <button id="loadWords" class="button">Bruk ordliste</button>
+    <button id="toggleCase" class="button">Vis stor forbokstav: av</button>
+    <button id="shareLink" class="button">Del oppgave</button>
+    <button id="newGame" class="button">Nytt spill</button>
+    <button id="solve" class="button">Løs oppgaven</button>
+    <div id="timeUsed">Tid: 00:00</div>
+  </div>
+  <main>
+    <div id="puzzle" role="grid"></div>
+    <aside>
+      <h2>Ord å finne</h2>
+      <ul id="wordList"></ul>
+    </aside>
+  </main>
+  <script>
+    const DEFAULT_WORDS = ['eple', 'bok', 'data', 'kode', 'java', 'html'];
+    let originalWords = [...DEFAULT_WORDS];
+    let WORDS = [...originalWords];
+    let preserveCase = false;
+    let isShared = false;
+    const size = 10;
+    let grid = [], placedWords = [], startTime, timerInterval;
+
+    function loadFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const wordsParam = params.get('words');
+      const caseParam = params.get('case');
+      if (wordsParam) {
+        isShared = true;
+        const list = wordsParam.split(',').map(w => decodeURIComponent(w.trim()));
+        originalWords = list.slice();
+        preserveCase = caseParam === '1';
+        document.getElementById('wordInput').value = list.join(', ');
+        WORDS = preserveCase ? [...list] : list.map(w => w.toLowerCase());
+      }
+    }
+
+    function shareLink() {
+      const base = window.location.origin + window.location.pathname;
+      const wordsParam = originalWords.map(w => encodeURIComponent(w)).join(',');
+      const caseParam = preserveCase ? '1' : '0';
+      const url = `${base}?words=${wordsParam}&case=${caseParam}`;
+      prompt('Kopier denne delingslenken:', url);
+    }
+
+    function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+    function shuffle(arr) { for (let i = arr.length - 1; i > 0; i--) { const j = randInt(0, i); [arr[i], arr[j]] = [arr[j], arr[i]]; }}
+    function createEmptyGrid() { grid = Array.from({ length: size }, () => Array(size).fill('')); }
+
+    function placeWords() {
+      placedWords = [];
+      const dirs = [[0,1],[1,0],[1,1],[0,-1],[-1,0],[-1,-1],[1,-1],[-1,1]];
+      const words = [...WORDS]; shuffle(words);
+      words.forEach(word => {
+        let placed = false;
+        for (let i = 0; i < 100 && !placed; i++) {
+          const dir = dirs[randInt(0, dirs.length - 1)];
+          const row = randInt(0, size - 1);
+          const col = randInt(0, size - 1);
+          const endRow = row + dir[0] * (word.length - 1);
+          const endCol = col + dir[1] * (word.length - 1);
+          if (endRow < 0 || endRow >= size || endCol < 0 || endCol >= size) continue;
+          let conflict = false;
+          for (let j = 0; j < word.length; j++) {
+            const r = row + dir[0] * j;
+            const c = col + dir[1] * j;
+            if (grid[r][c] && grid[r][c] !== word[j]) { conflict = true; break; }
+          }
+          if (conflict) continue;
+          for (let j = 0; j < word.length; j++) {
+            grid[row + dir[0] * j][col + dir[1] * j] = word[j];
+          }
+          placed = true;
+          placedWords.push({ word, row, col, dir });
+        }
+      });
+    }
+
+    function fillGrid() {
+      const letters = preserveCase
+        ? 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÆØÅæøå'
+        : 'abcdefghijklmnopqrstuvwxyzæøå';
+      for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) if (!grid[r][c]) grid[r][c] = letters[randInt(0, letters.length - 1)];
+    }
+
+    function renderGrid() {
+      const pu = document.getElementById('puzzle'); pu.innerHTML = '';
+      for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) {
+        const cell = document.createElement('div'); cell.className = 'cell'; cell.dataset.row = r; cell.dataset.col = c; cell.textContent = grid[r][c]; pu.appendChild(cell);
+      }
+    }
+
+    function renderWordList() {
+      const ul = document.getElementById('wordList'); ul.innerHTML = '';
+      placedWords.forEach(({ word }) => { const li = document.createElement('li'); li.textContent = word; li.id = `w-${word}`; ul.appendChild(li); });
+    }
+
+    function startTimer() { clearInterval(timerInterval); startTime = Date.now(); timerInterval = setInterval(() => {
+      const diff = Date.now() - startTime; const m = Math.floor(diff/60000), s = Math.floor(diff/1000)%60;
+      document.getElementById('timeUsed').textContent = `Tid: ${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+    }, 500); }
+
+    let selecting=false, startCell=null;
+    function onMouseDown(e){ if(!e.target.classList.contains('cell'))return; selecting=true; startCell=e.target; clearHighlights(); highlightCell(startCell); }
+    function onMouseOver(e){ if(selecting&&e.target.classList.contains('cell')){ clearHighlights(); highlightPath(startCell,e.target);} }
+    function onMouseUp(e){ if(selecting){ selecting=false; checkSelection(startCell,e.target);} }
+    function clearHighlights(){ document.querySelectorAll('.cell.highlight').forEach(c=>c.classList.remove('highlight')); }
+    function highlightCell(c){ c.classList.add('highlight'); }
+    function highlightPath(start,end){ const r1=+start.dataset.row,c1=+start.dataset.col; const r2=+end.dataset.row,c2=+end.dataset.col; const dr=Math.sign(r2-r1),dc=Math.sign(c2-c1); let r=r1,c=c1; while(true){ document.querySelector(`.cell[data-row='${r}'][data-col='${c}']`).classList.add('highlight'); if(r===r2&&c===c2) break; r+=dr; c+=dc;} }
+    function checkSelection(start,end){ const r1=+start.dataset.row,c1=+start.dataset.col; const r2=+end.dataset.row,c2=+end.dataset.col; const dr=Math.sign(r2-r1),dc=Math.sign(c2-c1); let r=r1,c=c1,sel='',cells=[]; while(true){ const cell=document.querySelector(`.cell[data-row='${r}'][data-col='${c}']`); cells.push(cell); sel+=grid[r][c]; if(r===r2&&c===c2) break; r+=dr; c+=dc;} const found=placedWords.find(p=>p.word===sel)||placedWords.find(p=>p.word===[...sel].reverse().join('')); if(found){ cells.forEach(c=>c.classList.add('found')); document.getElementById('w-'+found.word).classList.add('found'); placedWords=placedWords.filter(p=>p!==found); if(!placedWords.length) alert('Gratulerer! Du fant alle ord!'); } clearHighlights(); }
+    function solveAll(){ placedWords.forEach(({word,row,col,dir})=>{ let r=row,c=col; for(const ch of word){ document.querySelector(`.cell[data-row='${r}'][data-col='${c}']`).classList.add('found'); r+=dir[0]; c+=dir[1]; } document.getElementById('w-'+word).classList.add('found'); }); placedWords=[]; }
+    function createGame(){ createEmptyGrid(); placeWords(); fillGrid(); renderGrid(); renderWordList(); startTimer(); }
+    function loadCustomWords(){ const input=document.getElementById('wordInput').value; const list=input.split(/[\n,]+/).map(w=>w.trim()).filter(w=>w); if(list.length){ originalWords=list.slice(); WORDS=preserveCase? [...originalWords]: originalWords.map(w=>w.toLowerCase()); createGame(); }}
+
+    document.addEventListener('DOMContentLoaded',()=>{ loadFromUrl(); if(isShared){ document.getElementById('wordInput').style.display='none'; document.getElementById('loadWords').style.display='none'; } document.getElementById('loadWords').addEventListener('click',loadCustomWords); document.getElementById('toggleCase').addEventListener('click',()=>{ preserveCase=!preserveCase; document.getElementById('toggleCase').textContent=`Vis stor forbokstav: ${preserveCase?'På':'Av'}`; WORDS=preserveCase?[...originalWords]:originalWords.map(w=>w.toLowerCase()); createGame(); }); document.getElementById('shareLink').addEventListener('click',shareLink); document.getElementById('newGame').addEventListener('click',createGame); document.getElementById('solve').addEventListener('click',solveAll); document.getElementById('puzzle').addEventListener('mousedown',onMouseDown); document.getElementById('puzzle').addEventListener('mouseover',onMouseOver); document.addEventListener('mouseup',onMouseUp); createGame(); });
+  </script>
+</body>
+</html>
