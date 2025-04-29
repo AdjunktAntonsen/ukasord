@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Øveside for ukas ord og andre begreper</title>
+  <style>
+    :root {
+      --grid-dim: 10;
+      --cell-size: 2.5em;
+      --cell-border: 1px solid #ccc;
+      --highlight-color: #ffeb3b;
+      --found-color: #8bc34a;
+      --solution-color: #e91e63;
+    }
+    body { font-family: sans-serif; margin: 0; display: flex; flex-direction: column; min-height: 100vh; }
+    header { background: #2196f3; color: white; padding: 1em; text-align: center; }
+    .header__title { margin: 0; font-size: 1.5em; }
+    .header__subtitle { margin: 0; font-size: 1em; opacity: 0.9; font-family: Georgia, serif; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 1em; padding: 1em; align-items: center; }
+    .controls textarea { flex: 1 1 100%; min-height: 3em; padding: 0.5em; border: 1px solid #ccc; border-radius: 4px; font-size: 1em; }
+    .button { background: #fff; border: none; padding: 0.5em 1em; cursor: pointer; border-radius: 0.5em; box-shadow: 0 2px 4px rgba(0,0,0,0.15); transition: box-shadow 0.2s; font-size: 1em; }
+    .button:hover { box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+    main { flex: 1; display: flex; gap: 2em; padding: 1em; }
+    #puzzle {
+      display: grid;
+      grid-template-columns: repeat(var(--grid-dim), var(--cell-size));
+      grid-template-rows: repeat(var(--grid-dim), var(--cell-size));
+      user-select: none;
+    }
+    .cell { width: var(--cell-size); height: var(--cell-size); display: flex; justify-content: center; align-items: center; border: var(--cell-border); font-weight: bold; cursor: pointer; }
+    .cell.highlight { background: var(--highlight-color); }
+    .cell.found { background: var(--found-color); cursor: default; }
+    .cell.solution { background: var(--solution-color); cursor: default; }
+    aside { width: 18em; }
+    #wordList, #hsNames, #hsTimes { list-style: none; padding: 0; margin: 0; }
+    #wordList li.found { text-decoration: line-through; color: #666; }
+    #timeUsed { margin-top: 1em; font-size: 0.9em; }
+    .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; }
+    .modal { background: white; padding: 1.5em; border-radius: 0.5em; max-width: 90%; width: 300px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); text-align: center; }
+    .modal h3 { margin-top: 0; }
+    .modal input { width: 100%; padding: 0.5em; margin: 0.5em 0; }
+    .modal .actions { display: flex; gap: 0.5em; justify-content: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 class="header__title">Øveside for ukas ord og andre begreper</h1>
+    <p class="header__subtitle">Vidar M. Antonsen</p>
+  </header>
+  <div class="controls">
+    <textarea id="wordInput" placeholder="Skriv inn ord..."></textarea>
+    <button id="toggleList" class="button">Bruk ordliste</button>
+    <button id="toggleCase" class="button">Vis stor forbokstav: av</button>
+    <button id="shareLink" class="button">Del oppgave</button>
+    <button id="newGame" class="button">Nytt spill</button>
+    <button id="solve" class="button">Løs oppgaven</button>
+    <div id="timeUsed">Tid: 00:00</div>
+  </div>
+  <main>
+    <div id="puzzle" role="grid"></div>
+    <aside>
+      <div style="display:flex; gap:1em;">
+        <div style="flex:1;">
+          <h2>Ord å finne</h2>
+          <ul id="wordList"></ul>
+        </div>
+        <div style="display:flex; align-items:flex-start;">
+          <div style="flex:1;">
+            <h2>Highscore</h2>
+            <ol id="hsNames"></ol>
+          </div>
+          <div style="width:5em; text-align:right;">
+            <h2>&nbsp;</h2>
+            <ol id="hsTimes"></ol>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+  <div id="overlay" class="overlay">
+    <div class="modal">
+      <h3 id="modalTitle">Gratulerer!</h3>
+      <p id="modalMessage">Du fant alle ord på <span id="endTime">00:00</span>.</p>
+      <input type="text" id="playerName" placeholder="Skriv inn navnet ditt" />
+      <div class="actions">
+        <button id="saveScore" class="button">Lagre</button>
+        <button id="closeModal" class="button">Lukk</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const FULL_WORD_LIST = ['alltid','arbeid','barn','barna','blant','bruk','bruke','bruker','dere','derfor','dersom','egen','eget','eller','eneste','etter','fall','feil','fikk','finner','fire','foran','form','fram','fått','gammel','ganger','ganske','gikk','gjøre','gode','grad','hans','hatt','hele','hjem','holde','holdt','høyt','innen','jobb','kamp','kampen','klart','kommet','krav','kunne','laget','lange','legger','lett','like','livet','mange','mellom','mine','morgen','mulig','natt','navn','nesten','ofte','også','onsdag','regner','riktig','rundt','sagt','samlet','selv','setter','sine','skjer','skole','skulle','slik','sted','stedet','sterk','svært','særlig','timer','ting','trolig','tror','vant','veldig','verden','viktig','ville','viser','vite','våre','vårt','være','årene','årets','ønsker'];
+      let originalWords = FULL_WORD_LIST.slice(0,10);
+      let WORDS = [...originalWords];
+      let preserveCase = false;
+      let usingCustomList = false;
+      let size = 10;  // dynamic grid size, recalculated per game
+      let grid = [], placedWords = [], startTime, timerInterval;
+      const params = new URLSearchParams(window.location.search);
+      const gameId = params.get('game') || 'default';
+      const storageKey = 'hfScores_' + gameId;
+      // Default highscore entries for new game
+      const defaultScores = [
+        { name: 'Alice', time: '01:30' },
+        { name: 'Bjørn', time: '01:45' },
+        { name: 'Camilla', time: '02:00' },
+        { name: 'Dag', time: '02:15' },
+        { name: 'Elin', time: '02:30' }
+      ];
+      const storedScores = JSON.parse(localStorage.getItem(storageKey) || 'null');
+      let highscores = Array.isArray(storedScores) && storedScores.length > 0 ? storedScores : defaultScores.slice();
+
+      const puzzle = document.getElementById('puzzle');
+      const wordListEl = document.getElementById('wordList');
+      const namesOl = document.getElementById('hsNames');
+      const timesOl = document.getElementById('hsTimes');
+      const overlay = document.getElementById('overlay');
+      const modalTitle = document.getElementById('modalTitle');
+      const modalMessage = document.getElementById('modalMessage');
+      const endTimeEl = document.getElementById('endTime');
+      const nameInput = document.getElementById('playerName');
+      const saveBtn = document.getElementById('saveScore');
+      const closeBtn = document.getElementById('closeModal');
+
+      function randInt(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
+      function shuffle(a){for(let i=a.length-1;i>0;i--){const j=randInt(0,i);[a[i],a[j]]=[a[j],a[i]];}}
+
+      function displayScores(){
+        namesOl.innerHTML = '';
+        timesOl.innerHTML = '';
+        highscores.forEach((s,i)=>{
+          const ln = document.createElement('li'); ln.textContent = (i<5?`${i+1}. `:'') + s.name;
+          const lt = document.createElement('li'); lt.textContent = (i<5?`${i+1}. `:'') + s.time;
+          namesOl.appendChild(ln);
+          timesOl.appendChild(lt);
+        });
+      }
+
+      function createEmptyGrid(){ grid = Array.from({length:size},()=>Array(size).fill('')); }
+      function placeWords(){ placedWords=[]; const dirs=[[0,1],[1,0],[1,1],[0,-1],[-1,0],[-1,-1],[1,-1],[-1,1]]; shuffle(WORDS); WORDS.forEach(w=>{let placed=false; for(let i=0;i<100&&!placed;i++){const [dr,dc]=dirs[randInt(0,dirs.length-1)]; const r=randInt(0,size-1), c=randInt(0,size-1); const er=r+dr*(w.length-1), ec=c+dc*(w.length-1); if(er<0||er>=size||ec<0||ec>=size) continue; let conflict=false; for(let j=0;j<w.length;j++){ if(grid[r+dr*j][c+dc*j]&&grid[r+dr*j][c+dc*j]!==w[j]){conflict=true;break;} } if(conflict) continue; for(let j=0;j<w.length;j++) grid[r+dr*j][c+dc*j]=w[j]; placedWords.push({word:w,row:r,col:c,dr,dc}); placed=true;} });}
+      function fillGrid(){ const letters = preserveCase?'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÆØÅæøå':'abcdefghijklmnopqrstuvwxyzæøå'; for(let r=0;r<size;r++) for(let c=0;c<size;c++) if(!grid[r][c]) grid[r][c]=letters[randInt(0,letters.length-1)]; }
+      function renderGrid(){ puzzle.innerHTML=''; for(let r=0;r<size;r++) for(let c=0;c<size;c++){ const cell=document.createElement('div'); cell.className='cell'; cell.dataset.row=r; cell.dataset.col=c; cell.textContent=grid[r][c]; puzzle.appendChild(cell);} }
+      function renderWordList(){ wordListEl.innerHTML=''; placedWords.forEach(o=>{ const li=document.createElement('li'); li.textContent=o.word; li.id='w-'+o.word; wordListEl.appendChild(li); }); }
+      function startTimer(){ clearInterval(timerInterval); startTime=Date.now(); timerInterval=setInterval(()=>{ const d=Date.now()-startTime; const m=Math.floor(d/60000), s=Math.floor(d/1000)%60; document.getElementById('timeUsed').textContent=`Tid: ${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`; },500); }
+
+      let selecting=false, startCell=null;
+      function clearHighlights(){ document.querySelectorAll('.cell.highlight').forEach(c=>c.classList.remove('highlight')); }
+      function highlightPath(a,b){ let r1=+a.dataset.row, c1=+a.dataset.col, r2=+b.dataset.row, c2=+b.dataset.col; const dr=Math.sign(r2-r1), dc=Math.sign(c2-c1); let r=r1, c=c1; while(true){ document.querySelector(`.cell[data-row='${r}'][data-col='${c}']`)?.classList.add('highlight'); if(r===r2&&c===c2) break; r+=dr; c+=dc; } }
+      function processSelection(a,b){ let r1=+a.dataset.row, c1=+a.dataset.col, r2=+b.dataset.row, c2=+b.dataset.col; const dr=Math.sign(r2-r1), dc=Math.sign(c2-c1); let r=r1, c=c1, sel='', cells=[]; while(true){ const cell=document.querySelector(`.cell[data-row='${r}'][data-col='${c}']`); cells.push(cell); sel+=grid[r][c]; if(r===r2&&c===c2) break; r+=dr; c+=dc;} const rev=[...sel].reverse().join(''); const idx=placedWords.findIndex(o=>o.word===sel||o.word===rev); if(idx>=0){ cells.forEach(cel=>cel.classList.add('found')); document.getElementById('w-'+placedWords[idx].word)?.classList.add('found'); placedWords.splice(idx,1); renderWordList(); if(placedWords.length===0) finishGame(); } clearHighlights(); }
+      function solveAll(){ placedWords.forEach(o=>{ let r=o.row, c=o.col; for(const ch of o.word){ document.querySelector(`.cell[data-row='${r}'][data-col='${c}']`)?.classList.add('solution'); r+=o.dr; c+=o.dc;} document.getElementById('w-'+o.word)?.classList.add('found'); }); placedWords=[]; renderWordList(); finishGame(); }
+
+      let savedTime='';
+      function showModal(time,isHigh,rank){ clearInterval(timerInterval); if(time) endTimeEl.textContent=time; if(isHigh){ modalTitle.textContent='Ny highscore!'; modalMessage.textContent='Du ligger på #'+rank+'. Skriv navn:'; nameInput.style.display=''; saveBtn.style.display=''; } else if(time){ modalTitle.textContent='Bra jobba!'; modalMessage.textContent='Bra jobba! Vil du prøve på nytt?'; nameInput.style.display='none'; saveBtn.style.display='none'; } else { modalTitle.textContent='Her er fasit.'; modalMessage.textContent='Alle ord er markert.'; nameInput.style.display='none'; saveBtn.style.display='none'; } savedTime=time; overlay.style.display='flex'; }
+      closeBtn.addEventListener('click',()=>overlay.style.display='none');
+      saveBtn.addEventListener('click',()=>{ const p=nameInput.value.trim(); if(!p) return; highscores.push({name:p,time:savedTime}); highscores.sort((a,b)=>parseInt(a.time)-parseInt(b.time)); highscores=highscores.slice(0,10); localStorage.setItem(storageKey,JSON.stringify(highscores)); displayScores(); overlay.style.display='none'; });
+      function finishGame(){ const secs=Math.floor((Date.now()-startTime)/1000); const timeStr=`${Math.floor(secs/60).toString().padStart(2,'0')}:${(secs%60).toString().padStart(2,'0')}`; const rank=highscores.findIndex(s=>parseInt(s.time)>secs)+1; const isHigh=rank>0&&rank<=10; showModal(timeStr,isHigh,rank); }
+
+      function createGame(){
+        // Recalculate grid size based on longest word or word count
+        const maxWordLen = WORDS.reduce((max,w) => Math.max(max, w.length), 0);
+        size = Math.max(maxWordLen, WORDS.length);
+        // Update CSS grid dimension variable
+        document.documentElement.style.setProperty('--grid-dim', size);
+        // Generate new grid
+        createEmptyGrid();
+        placeWords();
+        fillGrid();
+        renderGrid();
+        renderWordList();
+        startTimer(); }
+      function toggleList(){ if(!usingCustomList){ const list=document.getElementById('wordInput').value.split(/[\n,]+/).map(w=>w.trim()).filter(w=>w); if(list.length){ originalWords=list; WORDS=preserveCase?list.slice():list.map(x=>x.toLowerCase()); usingCustomList=true; document.getElementById('toggleList').textContent='Høyfrekvente ord'; createGame(); }} else { const temp=[...FULL_WORD_LIST]; shuffle(temp); const hf=temp.slice(0,10); originalWords=hf; WORDS=hf; usingCustomList=false; document.getElementById('toggleList').textContent='Bruk ordliste'; createGame(); }}
+      function shareLink(){ const newGameId=Date.now().toString(); const base=window.location.origin+window.location.pathname; const wordsParam=encodeURIComponent(originalWords.join(',')); const caseParam=preserveCase?'1':'0'; const url=`${base}?game=${newGameId}&words=${wordsParam}&case=${caseParam}`; prompt('Kopier delingslenken:',url); }
+
+      document.getElementById('toggleList').addEventListener('click',toggleList);
+      document.getElementById('toggleCase').addEventListener('click',()=>{ preserveCase=!preserveCase; document.getElementById('toggleCase').textContent=`Vis stor forbokstav: ${preserveCase?'På':'Av'}`; WORDS=preserveCase?originalWords.slice():originalWords.map(w=>w.toLowerCase()); createGame(); });
+      document.getElementById('shareLink').addEventListener('click',shareLink);
+      document.getElementById('newGame').addEventListener('click',createGame);
+      document.getElementById('solve').addEventListener('click',solveAll);
+      puzzle.addEventListener('mousedown',e=>{ if(e.target.classList.contains('cell')){ selecting=true; startCell=e.target; clearHighlights(); startCell.classList.add('highlight'); }});
+      puzzle.addEventListener('mouseover',e=>{ if(selecting&&e.target.classList.contains('cell')){ clearHighlights(); highlightPath(startCell,e.target); }});
+      document.addEventListener('mouseup',e=>{ if(selecting){ selecting=false; processSelection(startCell,e.target); }});
+
+      displayScores();
+      createGame();
+    });
+  </script>
+</body>
+</html>
